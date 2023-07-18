@@ -22,10 +22,9 @@ export async function POST(req: Request) {
 
     const systemPrompt = `You are an assistant and will be given a set of text. 
     You are tasked to generate a question and answer pair such that the question is related to the set of text, 
-    and the answer to the question can be found in the text. You must output the question as the first of 2 sentences, 
-    and the answer to the question in the 2nd of the 2 sentences. There should be no new lines in the output. You must
-    not label the sentences with 'Question:' and 'Answer:' in the beginning of the sentences. You must place an & 
-    character in between both sentences.`;
+    and the answer to the question can be found in the text. You must output the question as the first item 
+    in an array, and the answer to the question in the 2nd item of the array. The strings 'Question:', 'Answer:', 
+    'Q:' or 'A' must not be present in any of the items in the output.`;
 
     const userPrompt = `Provide me with a question and answer pair from this text: '${notes}'`;
 
@@ -52,19 +51,22 @@ export async function POST(req: Request) {
       );
     }
 
-    const completionContent =
-      completion.data.choices[0].message.content.split("&");
+    console.log(completion.data.choices[0].message.content);
 
-    // console.log(completionContent);
+    const completionContent = completion.data.choices[0].message.content
+      .replace(/([.?!])\s*(?=[A-Z])/g, "$1|")
+      .split("|");
 
-    if (completionContent.length != 2) {
+    console.log(completionContent);
+
+    if (completionContent.length <= 1) {
       throw new OpenAIResponseError(
         "Pair of senetences from Question/Answer were not generated from the response."
       );
     }
 
     const question = completionContent[0];
-    const answer = completionContent[1];
+    const answer = completionContent.slice(1).join(" ");
 
     return NextResponse.json({
       question: question,
