@@ -5,6 +5,13 @@ import { NextResponse } from "next/server";
  * asking GPT for a question/answer pair in a single prompt gave too poor
  * results in testing.
  */
+class OpenAIResponseError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "OpenAIResponseError";
+  }
+}
+
 export async function POST(req: Request) {
   const body = await req.json();
   const notes = body.notes;
@@ -12,7 +19,15 @@ export async function POST(req: Request) {
     if (!body && !notes) {
       throw new Error("No notes provided in the request.");
     }
-    const question_prompt = `Ask a question based on information from the following: '${notes}'`;
+
+    const systemPrompt = `You are an assistant and will be given a set of text. 
+    You are tasked to generate a question and answer pair such that the question is related to the set of text, 
+    and the answer to the question can be found in the text. You must output the question as the first of 2 sentences, 
+    and the answer to the question in the 2nd of the 2 sentences. There should be no new lines in the output. You must
+    not label the sentences with 'Question:' and 'Answer:' in the beginning of the sentences. You must place an & 
+    character in between both sentences.`;
+
+    const userPrompt = `Provide me with a question and answer pair from this text: '${notes}'`;
 
     const configuration = new Configuration({
       organization: "org-C4Yz5JwmomBQwTPPvD2e14sG",
@@ -20,20 +35,36 @@ export async function POST(req: Request) {
     });
 
     const openai = new OpenAIApi(configuration);
-    const question_response = await openai.createCompletion({
-      model: "text-davinci-003",
-      prompt: question_prompt,
+    const completion = await openai.createChatCompletion({
+      model: "gpt-3.5-turbo",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
     });
 
-    const question = question_response.data.choices[0].text;
+    if (
+      !completion.data.choices[0].message ||
+      !completion.data.choices[0].message.content
+    ) {
+      throw new OpenAIResponseError(
+        "Did not recieve a message response form OpenAI."
+      );
+    }
 
-    const answer_prompt = `${question} Generate your answer to this question based on your understanding of the following: '${notes}'. Answer in a full sentence`;
-    const answer_response = await openai.createCompletion({
-      model: "text-davinci-003",
-      prompt: answer_prompt,
-    });
+    const completionContent =
+      completion.data.choices[0].message.content.split("&");
 
-    const answer = answer_response.data.choices[0].text;
+    // console.log(completionContent);
+
+    if (completionContent.length != 2) {
+      throw new OpenAIResponseError(
+        "Pair of senetences from Question/Answer were not generated from the response."
+      );
+    }
+
+    const question = completionContent[0];
+    const answer = completionContent[1];
 
     return NextResponse.json({
       question: question,
